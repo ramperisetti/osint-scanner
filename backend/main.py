@@ -1,9 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import asyncio
 
-from hibp import check_breaches
+from aggregator import run_all_sources
 
 app = FastAPI(title="OSINT Attack Surface Scanner")
 
@@ -34,12 +33,6 @@ class ScanResponse(BaseModel):
     remediations: list[str]
 
 
-def compute_overall_score(categories: dict) -> int:
-    """Average of all category scores, rounded to int."""
-    if not categories:
-        return 0
-    return round(sum(categories.values()) / len(categories))
-
 
 @app.get("/")
 def root():
@@ -56,21 +49,12 @@ async def scan_domain(req: ScanRequest):
     if not domain or "." not in domain:
         raise HTTPException(status_code=400, detail="Invalid domain format")
 
-    # --- Run data sources (add more here as you build them) ---
-    breach_findings, breach_score = await check_breaches(domain)
+    # Run all data sources in parallel via the aggregator
+    scan_data = await run_all_sources(domain)
 
-    # Placeholder scores for sources not yet built (Week 2)
-    categories = {
-        "credential_exposure": breach_score,
-        "saas_stack_exposure": 0,   # job_scraper.py — Week 2
-        "code_exposure": 0,         # github_scan.py — Week 2
-        "org_intel": 0,             # dns_scan.py — Week 2
-    }
-
-    all_findings = breach_findings
-    # Week 2: extend all_findings with results from other modules
-
-    overall = compute_overall_score({k: v for k, v in categories.items() if v > 0})
+    categories = scan_data["categories"]
+    all_findings = scan_data["findings"]
+    overall = scan_data["overall_score"]
 
     # Placeholder narrative and remediations — Claude API replaces this in Week 3
     narrative = (
