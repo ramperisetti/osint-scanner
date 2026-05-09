@@ -59,7 +59,7 @@ async def scan_domain(req: ScanRequest):
     # Placeholder narrative and remediations — Claude API replaces this in Week 3
     narrative = (
         f"Preliminary scan of {domain} complete. "
-        f"Credential exposure score: {breach_score}/100. "
+        f"Credential exposure score: {categories['credential_exposure']}/100. "
         f"Full AI-generated attacker narrative will appear here in Week 3."
     )
 
