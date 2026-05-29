@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ThreatLens — Attack Surface Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;800&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c10;
+    --bg2: #0d1117;
+    --bg3: #131b24;
+    --border: rgba(0,255,160,0.12);
+    --border2: rgba(0,255,160,0.25);
+    --green: #00ffa0;
+    --green-dim: rgba(0,255,160,0.5);
+    --green-glow: rgba(0,255,160,0.08);
+    --red: #ff4d6d;
+    --amber: #ffb700;
+    --blue: #4da6ff;
+    --text: #c8d8e8;
+    --text-dim: #5a7a90;
+    --text-bright: #eaf4ff;
+    --mono: 'Space Mono', monospace;
+    --display: 'Syne', sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Grid noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,160,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,160,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Scanline effect ── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.04) 2px,
+      rgba(0,0,0,0.04) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; padding: 0 24px 80px; }
+
+  /* ── Header ── */
+  header {
+    padding: 48px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 48px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .logo-block { display: flex; flex-direction: column; gap: 6px; }
+
+  .logo {
+    font-family: var(--display);
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--green);
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    border: 1.5px solid var(--green);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: var(--green);
+    flex-shrink: 0;
+  }
+
+  .logo-sub {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .header-meta {
+    text-align: right;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    margin-right: 6px;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Search bar ── */
+  .search-section { margin-bottom: 48px; }
+
+  .search-label {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    display: block;
+  }
+
+  .search-row {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .search-row:focus-within {
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px var(--green-glow), 0 0 20px rgba(0,255,160,0.05);
+  }
+
+  .search-prefix {
+    padding: 14px 16px;
+    background: var(--bg3);
+    color: var(--green-dim);
+    font-family: var(--mono);
+    font-size: 13px;
+    border-right: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  #domain-input {
+    flex: 1;
+    background: var(--bg2);
+    border: none;
+    outline: none;
+    padding: 14px 16px;
+    color: var(--text-bright);
+    font-family: var(--mono);
+    font-size: 14px;
+    caret-color: var(--green);
+  }
+
+  #domain-input::placeholder { color: var(--text-dim); }
+
+  #scan-btn {
+    background: var(--green);
+    color: #080c10;
+    border: none;
+    padding: 14px 28px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+    flex-shrink: 0;
+  }
+
+  #scan-btn:hover { background: #33ffb3; }
+  #scan-btn:active { opacity: 0.8; }
+  #scan-btn:disabled { background: var(--text-dim); cursor: not-allowed; color: var(--bg); }
+
+  .example-domains {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    align-items: center;
+  }
+
+  .example-label { font-size: 11px; color: var(--text-dim); }
+
+  .example-chip {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+
+  .example-chip:hover { border-color: var(--green-dim); color: var(--green); }
+
+  /* ── Loading / scan animation ── */
+  #loading { display: none; margin-bottom: 32px; }
+
+  .scan-progress {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    background: var(--bg2);
+  }
+
+  .scan-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .scan-spinner {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .scan-title {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+
+  .scan-log {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 2;
+    min-height: 80px;
+  }
+
+  .scan-log-line { display: flex; gap: 12px; align-items: baseline; }
+  .scan-log-time { color: var(--text-dim); flex-shrink: 0; opacity: 0.6; }
+  .scan-log-msg { color: var(--text); }
+  .scan-log-msg.ok { color: var(--green); }
+  .scan-log-msg.warn { color: var(--amber); }
+
+  /* ── Results ── */
+  #results { display: none; }
+
+  /* Score hero */
+  .score-hero {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 32px;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    background: var(--bg2);
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .score-hero::before {
+    content: '';
+    position: absolute;
+    top: -40px;
+    right: -40px;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,255,160,0.04) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .score-ring {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    flex-shrink: 0;
+  }
+
+  .score-ring svg {
+    transform: rotate(-90deg);
+    width: 100px;
+    height: 100px;
+  }
+
+  .score-ring-bg { fill: none; stroke: var(--bg3); stroke-width: 8; }
+
+  .score-ring-fill {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+    stroke-dasharray: 251.2;
+    stroke-dashoffset: 251.2;
+    transition: stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1), stroke 0.5s;
+  }
+
+  .score-ring-number {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--text-bright);
+  }
+
+  .score-info { min-width: 0; }
+
+  .score-domain {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .score-risk-label {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .score-risk-label.high { color: var(--red); }
+  .score-risk-label.medium { color: var(--amber); }
+  .score-risk-label.low { color: var(--green); }
+
+  .score-timestamp { font-size: 11px; color: var(--text-dim); }
+
+  /* Category cards */
+  .categories-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .cat-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    background: var(--bg2);
+    transition: border-color 0.2s;
+  }
+
+  .cat-card:hover { border-color: var(--border2); }
+
+  .cat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .cat-name {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .cat-score {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--text-bright);
+    margin-bottom: 6px;
+  }
+
+  .cat-bar {
+    height: 3px;
+    background: var(--bg3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .cat-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 1s cubic-bezier(0.34,1.56,0.64,1);
+    width: 0;
+  }
+
+  .bar-high { background: var(--red); }
+  .bar-medium { background: var(--amber); }
+  .bar-low { background: var(--green); }
+
+  .cat-na {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+    margin-top: 4px;
+  }
+
+  /* Findings */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-title {
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-bright);
+  }
+
+  .section-count {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 10px;
+    padding: 2px 8px;
+    color: var(--text-dim);
+  }
+
+  .findings-list { margin-bottom: 32px; }
+
+  .finding-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 14px;
+    align-items: start;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .finding-item:last-child { border-bottom: none; }
+
+  .finding-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .icon-breach { background: rgba(255,77,109,0.12); color: var(--red); }
+  .icon-saas { background: rgba(255,183,0,0.12); color: var(--amber); }
+  .icon-code { background: rgba(77,166,255,0.12); color: var(--blue); }
+  .icon-dns { background: rgba(0,255,160,0.12); color: var(--green); }
+
+  .finding-body {}
+
+  .finding-type {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 3px;
+  }
+
+  .finding-detail {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .severity-badge {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .sev-high { background: rgba(255,77,109,0.12); color: var(--red); border: 1px solid rgba(255,77,109,0.25); }
+  .sev-medium { background: rgba(255,183,0,0.12); color: var(--amber); border: 1px solid rgba(255,183,0,0.25); }
+  .sev-low { background: rgba(0,255,160,0.12); color: var(--green); border: 1px solid rgba(0,255,160,0.25); }
+
+  /* Narrative */
+  .narrative-box {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
+    border-radius: 0 8px 8px 0;
+    padding: 20px 20px 20px 24px;
+    background: var(--bg2);
+    margin-bottom: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .narrative-box::before {
+    content: 'THREAT INTEL';
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: rgba(255,77,109,0.4);
+    font-weight: 700;
+  }
+
+  .narrative-text {
+    font-size: 12px;
+    line-height: 1.9;
+    color: var(--text);
+  }
+
+  .narrative-placeholder {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  /* Remediations */
+  .remediation-list { list-style: none; margin-bottom: 32px; }
+
+  .remediation-item {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .remediation-item:last-child { border-bottom: none; }
+
+  .remediation-bullet {
+    color: var(--green);
+    flex-shrink: 0;
+    margin-top: 1px;
+    font-size: 12px;
+  }
+
+  /* Empty / error states */
+  .empty-state {
+    text-align: center;
+    padding: 64px 32px;
+    color: var(--text-dim);
+  }
+
+  .empty-icon {
+    font-size: 36px;
+    margin-bottom: 16px;
+    opacity: 0.3;
+  }
+
+  .empty-title {
+    font-family: var(--display);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+
+  .empty-sub { font-size: 12px; line-height: 1.8; }
+
+  /* Error */
+  .error-box {
+    border: 1px solid rgba(255,77,109,0.3);
+    border-radius: 8px;
+    padding: 16px 20px;
+    background: rgba(255,77,109,0.05);
+    font-size: 12px;
+    color: var(--red);
+    margin-bottom: 24px;
+    display: none;
+  }
+
+  /* Footer */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 0;
+    margin-top: 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+
+  .footer-links { display: flex; gap: 20px; }
+  .footer-links a { color: var(--text-dim); text-decoration: none; transition: color 0.15s; }
+  .footer-links a:hover { color: var(--green); }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    header { flex-direction: column; }
+    .header-meta { text-align: left; }
+    .score-hero { grid-template-columns: 1fr; }
+    .score-domain { font-size: 16px; }
+    .categories-grid { grid-template-columns: 1fr 1fr; }
+    #scan-btn { padding: 14px 16px; font-size: 10px; }
+  }
+
+  /* Typing cursor animation for narrative */
+  .cursor {
+    display: inline-block;
+    width: 7px;
+    height: 13px;
+    background: var(--green);
+    vertical-align: middle;
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="logo-block">
+      <div class="logo">
+        <div class="logo-icon">T</div>
+        ThreatLens
+      </div>
+      <div class="logo-sub">Attack Surface Intelligence Platform</div>
+    </div>
+    <div class="header-meta">
+      <div><span class="status-dot"></span>System operational</div>
+      <div id="live-time">—</div>
+      <div>v0.4.0 — hackathon build</div>
+    </div>
+  </header>
+
+  <section class="search-section">
+    <span class="search-label">// Target domain</span>
+    <div class="search-row">
+      <div class="search-prefix">$ scan</div>
+      <input
+        type="text"
+        id="domain-input"
+        placeholder="adobe.com"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button id="scan-btn" onclick="runScan()">SCAN ▶</button>
+    </div>
+    <div class="example-domains">
+      <span class="example-label">Try:</span>
+      <button class="example-chip" onclick="setDomain('adobe.com')">adobe.com</button>
+      <button class="example-chip" onclick="setDomain('linkedin.com')">linkedin.com</button>
+      <button class="example-chip" onclick="setDomain('microsoft.com')">microsoft.com</button>
+      <button class="example-chip" onclick="setDomain('stripe.com')">stripe.com</button>
+      <button class="example-chip" onclick="setDomain('netflix.com')">netflix.com</button>
+    </div>
+  </section>
+
+  <div id="error-box" class="error-box"></div>
+  <div id="loading">
+    <div class="scan-progress">
+      <div class="scan-header">
+        <div class="scan-spinner"></div>
+        <div class="scan-title">Scanning <span id="scan-target">—</span></div>
+      </div>
+      <div class="scan-log" id="scan-log"></div>
+    </div>
+  </div>
+
+  <div id="results">
+    <!-- Score hero -->
+    <div class="score-hero" id="score-hero">
+      <div class="score-ring">
+        <svg viewBox="0 0 100 100">
+          <circle class="score-ring-bg" cx="50" cy="50" r="40" />
+          <circle class="score-ring-fill" id="ring-fill" cx="50" cy="50" r="40" />
+        </svg>
+        <div class="score-ring-number" id="score-number">—</div>
+      </div>
+      <div class="score-info">
+        <div class="score-domain" id="result-domain">—</div>
+        <div class="score-risk-label" id="risk-label">—</div>
+        <div class="score-timestamp" id="scan-time">—</div>
+      </div>
+    </div>
+
+    <!-- Category breakdown -->
+    <div class="section-header">
+      <div class="section-title">Category breakdown</div>
+    </div>
+    <div class="categories-grid" id="categories-grid"></div>
+
+    <!-- Threat narrative -->
+    <div class="section-header">
+      <div class="section-title">Attacker narrative</div>
+    </div>
+    <div class="narrative-box">
+      <div class="narrative-text" id="narrative-text"></div>
+    </div>
+
+    <!-- Findings -->
+    <div class="section-header">
+      <div class="section-title">Findings</div>
+      <div class="section-count" id="findings-count">0</div>
+    </div>
+    <div class="findings-list" id="findings-list"></div>
+
+    <!-- Remediations -->
+    <div class="section-header">
+      <div class="section-title">Remediations</div>
+    </div>
+    <ul class="remediation-list" id="remediation-list"></ul>
+  </div>
+
+  <!-- Initial empty state -->
+  <div class="empty-state" id="empty-state">
+    <div class="empty-icon">◉</div>
+    <div class="empty-title">Enter a domain to begin</div>
+    <div class="empty-sub">
+      ThreatLens aggregates public data across four attack<br />
+      surface vectors and synthesizes an attacker's perspective.
+    </div>
+  </div>
+
+  <footer>
+    <div>Built for SAFE Security Hackathon — educational use only</div>
+    <div class="footer-links">
+      <a href="https://github.com/ramperisetti/osint-scanner" target="_blank">GitHub</a>
+      <a href="#" onclick="return false;">API Docs</a>
+    </div>
+  </footer>
+</div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────
+  // Replace this with your Railway backend URL
+  const API_BASE = 'https://osint-scanner-production.up.railway.app';
+
+  // ── Live clock ─────────────────────────────────────────
+  function tick() {
+    const now = new Date();
+    document.getElementById('live-time').textContent =
+      now.toUTCString().replace('GMT', 'UTC');
+  }
+  tick(); setInterval(tick, 1000);
+
+  // ── Helpers ────────────────────────────────────────────
+  function setDomain(d) {
+    document.getElementById('domain-input').value = d;
+    document.getElementById('domain-input').focus();
+  }
+
+  function addLog(msg, type = '') {
+    const log = document.getElementById('scan-log');
+    const line = document.createElement('div');
+    line.className = 'scan-log-line';
+    const now = new Date().toTimeString().slice(0, 8);
+    line.innerHTML = `
+      <span class="scan-log-time">${now}</span>
+      <span class="scan-log-msg ${type}">${msg}</span>
+    `;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function scoreColor(s) {
+    if (s >= 60) return 'var(--red)';
+    if (s >= 30) return 'var(--amber)';
+    return 'var(--green)';
+  }
+
+  function barClass(s) {
+    if (s >= 60) return 'bar-high';
+    if (s >= 30) return 'bar-medium';
+    return 'bar-low';
+  }
+
+  function riskLabel(s) {
+    if (s >= 75) return { text: '■■■ CRITICAL EXPOSURE', cls: 'high' };
+    if (s >= 50) return { text: '■■□ HIGH EXPOSURE', cls: 'high' };
+    if (s >= 30) return { text: '■□□ MEDIUM EXPOSURE', cls: 'medium' };
+    return { text: '□□□ LOW EXPOSURE', cls: 'low' };
+  }
+
+  function findingIcon(type) {
+    if (type === 'breach') return { cls: 'icon-breach', ch: '⊘' };
+    if (type === 'saas_tool') return { cls: 'icon-saas', ch: '⬡' };
+    if (type === 'code_secret' || type === 'github') return { cls: 'icon-code', ch: '</>' };
+    return { cls: 'icon-dns', ch: '⬢' };
+  }
+
+  function findingTypeLabel(type) {
+    const map = {
+      breach: 'Credential Breach',
+      saas_tool: 'SaaS Stack Exposure',
+      code_secret: 'Code Exposure',
+      github: 'Code Exposure',
+      dns: 'DNS / Infrastructure',
+      subdomain: 'Subdomain Intel',
+      email_provider: 'Email Provider',
+      spf: 'SPF Misconfiguration',
+      org: 'Organisation Intel',
+    };
+    return map[type] || type.replace(/_/g, ' ').toUpperCase();
+  }
+
+  // ── Category labels ────────────────────────────────────
+  const CAT_LABELS = {
+    credential_exposure: 'Credential Exposure',
+    saas_stack_exposure: 'SaaS Stack',
+    code_exposure: 'Code Exposure',
+    org_intel: 'Org Intel',
+  };
+
+  // ── Main scan function ─────────────────────────────────
+  async function runScan() {
+    const input = document.getElementById('domain-input').value.trim();
+    if (!input) return;
+
+    const domain = input.replace(/^https?:\/\//, '').replace(/\/.*$/, '').trim();
+    if (!domain) return;
+
+    // UI state
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('error-box').style.display = 'none';
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('scan-target').textContent = domain;
+    document.getElementById('scan-log').innerHTML = '';
+    document.getElementById('scan-btn').disabled = true;
+
+    addLog('Initializing scan for ' + domain + ' ...');
+
+    const logMsgs = [
+      { t: 400,  msg: 'Checking HaveIBeenPwned breach database...', type: '' },
+      { t: 900,  msg: 'Querying job postings for SaaS stack inference...', type: '' },
+      { t: 1500, msg: 'Scanning GitHub organisation for public repos...', type: '' },
+      { t: 2100, msg: 'Probing DNS records and subdomains...', type: '' },
+      { t: 2700, msg: 'Aggregating findings...', type: '' },
+      { t: 3200, msg: 'Generating attacker narrative...', type: '' },
+    ];
+
+    logMsgs.forEach(({ t, msg, type }) =>
+      setTimeout(() => addLog(msg, type), t)
+    );
+
+    try {
+      const res = await fetch(`${API_BASE}/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      addLog('Scan complete — ' + (data.findings?.length || 0) + ' findings', 'ok');
+      setTimeout(() => renderResults(data), 600);
+
+    } catch (e) {
+      document.getElementById('loading').style.display = 'none';
+      const box = document.getElementById('error-box');
+      box.style.display = 'block';
+      box.textContent = '✕ Scan failed: ' + e.message + '. Check that the backend is running at ' + API_BASE;
+      document.getElementById('empty-state').style.display = 'block';
+    } finally {
+      document.getElementById('scan-btn').disabled = false;
+    }
+  }
+
+  // ── Render ─────────────────────────────────────────────
+  function renderResults(data) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('results').style.display = 'block';
+
+    const score = data.overall_score || 0;
+    const risk = riskLabel(score);
+
+    // Score ring
+    document.getElementById('score-number').textContent = score;
+    document.getElementById('result-domain').textContent = data.domain;
+    const rl = document.getElementById('risk-label');
+    rl.textContent = risk.text;
+    rl.className = 'score-risk-label ' + risk.cls;
+    document.getElementById('scan-time').textContent =
+      'Scanned ' + new Date().toLocaleString();
+
+    // Animate ring
+    const fill = document.getElementById('ring-fill');
+    const circumference = 251.2;
+    const offset = circumference - (score / 100) * circumference;
+    fill.style.stroke = scoreColor(score);
+    requestAnimationFrame(() => {
+      fill.style.strokeDashoffset = offset;
+    });
+
+    // Categories
+    const cats = data.categories || {};
+    const grid = document.getElementById('categories-grid');
+    grid.innerHTML = '';
+    const allCats = ['credential_exposure', 'saas_stack_exposure', 'code_exposure', 'org_intel'];
+    allCats.forEach(key => {
+      const label = CAT_LABELS[key] || key;
+      const card = document.createElement('div');
+      card.className = 'cat-card';
+
+      if (cats[key] === undefined || cats[key] === null) {
+        card.innerHTML = `
+          <div class="cat-header">
+            <span class="cat-name">${label}</span>
+          </div>
+          <div class="cat-na">No data</div>
+        `;
+      } else {
+        const s = cats[key];
+        const bc = barClass(s);
+        card.innerHTML = `
+          <div class="cat-header">
+            <span class="cat-name">${label}</span>
+          </div>
+          <div class="cat-score">${s}<span style="font-size:13px;color:var(--text-dim)">/100</span></div>
+          <div class="cat-bar">
+            <div class="cat-bar-fill ${bc}" id="bar-${key}" style="width:0%"></div>
+          </div>
+        `;
+        setTimeout(() => {
+          const bar = document.getElementById('bar-' + key);
+          if (bar) bar.style.width = s + '%';
+        }, 100);
+      }
+      grid.appendChild(card);
+    });
+
+    // Narrative
+    const narrativeEl = document.getElementById('narrative-text');
+    const narrativeText = data.narrative || '';
+    if (narrativeText && !narrativeText.includes('Full AI-generated')) {
+      narrativeEl.textContent = '';
+      let i = 0;
+      const cursor = document.createElement('span');
+      cursor.className = 'cursor';
+      narrativeEl.appendChild(cursor);
+      const interval = setInterval(() => {
+        if (i < narrativeText.length) {
+          narrativeEl.insertBefore(document.createTextNode(narrativeText[i]), cursor);
+          i++;
+        } else {
+          clearInterval(interval);
+          cursor.remove();
+        }
+      }, 8);
+    } else {
+      narrativeEl.innerHTML = `<span class="narrative-placeholder">AI-generated attacker narrative will appear here once the Claude API integration is complete in the next build phase.</span>`;
+    }
+
+    // Findings
+    const findings = data.findings || [];
+    document.getElementById('findings-count').textContent = findings.length;
+    const list = document.getElementById('findings-list');
+    list.innerHTML = '';
+    if (findings.length === 0) {
+      list.innerHTML = '<div style="padding:24px 0;color:var(--text-dim);font-size:12px;">No findings detected for this domain.</div>';
+    } else {
+      findings.forEach(f => {
+        const { cls, ch } = findingIcon(f.type);
+        const item = document.createElement('div');
+        item.className = 'finding-item';
+        item.innerHTML = `
+          <div class="finding-icon ${cls}">${ch}</div>
+          <div class="finding-body">
+            <div class="finding-type">${findingTypeLabel(f.type)}</div>
+            <div class="finding-detail">${f.detail}</div>
+          </div>
+          <span class="severity-badge sev-${f.severity || 'medium'}">${f.severity || 'medium'}</span>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    // Remediations
+    const rems = data.remediations || [];
+    const remList = document.getElementById('remediation-list');
+    remList.innerHTML = '';
+    rems.forEach(r => {
+      const li = document.createElement('li');
+      li.className = 'remediation-item';
+      li.innerHTML = `<span class="remediation-bullet">→</span><span>${r}</span>`;
+      remList.appendChild(li);
+    });
+
+    // Scroll to results
+    document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── Enter key support ──────────────────────────────────
+  document.getElementById('domain-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runScan();
+  });
+</script>
+</body>
+</html>
