@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 
 from aggregator import run_all_sources
 
@@ -8,7 +9,7 @@ app = FastAPI(title="OSINT Attack Surface Scanner")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten this before production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -27,11 +28,10 @@ class Finding(BaseModel):
 class ScanResponse(BaseModel):
     domain: str
     overall_score: int
-    categories: dict
+    categories: dict          # only contains categories with real data
     findings: list[Finding]
     narrative: str
     remediations: list[str]
-
 
 
 @app.get("/")
@@ -43,23 +43,27 @@ def root():
 async def scan_domain(req: ScanRequest):
     domain = req.domain.strip().lower()
 
-    # Basic validation — strip http/https if someone pastes a URL
+    # Strip http/https and paths if someone pastes a full URL
     domain = domain.replace("https://", "").replace("http://", "").split("/")[0]
 
     if not domain or "." not in domain:
         raise HTTPException(status_code=400, detail="Invalid domain format")
 
-    # Run all data sources in parallel via the aggregator
+    # Run all data sources in parallel
     scan_data = await run_all_sources(domain)
 
     categories = scan_data["categories"]
     all_findings = scan_data["findings"]
     overall = scan_data["overall_score"]
 
-    # Placeholder narrative and remediations — Claude API replaces this in Week 3
+    # Placeholder narrative — replaced by Claude API in Week 3
+    category_summary = ", ".join(
+        f"{k.replace('_', ' ')}: {v}/100"
+        for k, v in categories.items()
+    )
     narrative = (
         f"Preliminary scan of {domain} complete. "
-        f"Credential exposure score: {categories['credential_exposure']}/100. "
+        f"Scores — {category_summary}. "
         f"Full AI-generated attacker narrative will appear here in Week 3."
     )
 
