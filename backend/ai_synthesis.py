@@ -128,7 +128,7 @@ Return ONLY valid JSON. No markdown, no explanation, no backticks."""
 
     try:
         response = await client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-5",
             max_tokens=1500,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
