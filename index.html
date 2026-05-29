@@ -745,6 +745,14 @@
     <div class="narrative-box">
       <div class="narrative-text" id="narrative-text"></div>
     </div>
+    <!-- Phishing email -->
+    <div class="section-header">
+      <div class="section-title">Sample attack vector</div>
+    </div>
+    <div class="narrative-box" id="phishing-box" style="border-left-color: var(--amber); margin-bottom:32px;">
+      <div style="position:absolute;top:12px;right:16px;font-size:9px;letter-spacing:2px;color:rgba(255,183,0,0.4);font-weight:700;">SIMULATED PHISHING</div>
+      <div class="narrative-text" id="phishing-email-text" style="white-space:pre-line;"></div>
+    </div>
 
     <!-- Findings -->
     <div class="section-header">
@@ -1027,6 +1035,13 @@
         list.appendChild(item);
       });
     }
+       // Phishing email
+    const phishEl = document.getElementById('phishing-email-text');
+    if (data.phishing_email) 
+    {
+      phishEl.textContent = data.phishing_email;
+    }
+
 
     // Remediations
     const rems = data.remediations || [];
