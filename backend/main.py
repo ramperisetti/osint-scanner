@@ -1,9 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
 
-from aggregator import run_all_sources
+from aggregator    import run_all_sources
+from ai_synthesis  import generate_narrative
 
 app = FastAPI(title="OSINT Attack Surface Scanner")
 
@@ -22,16 +22,17 @@ class ScanRequest(BaseModel):
 class Finding(BaseModel):
     type: str
     detail: str
-    severity: str  # "high" | "medium" | "low"
+    severity: str
 
 
 class ScanResponse(BaseModel):
-    domain: str
+    domain:        str
     overall_score: int
-    categories: dict          # only contains categories with real data
-    findings: list[Finding]
-    narrative: str
-    remediations: list[str]
+    categories:    dict
+    findings:      list[Finding]
+    narrative:     str
+    phishing_email: str
+    remediations:  list[str]
 
 
 @app.get("/")
@@ -42,42 +43,27 @@ def root():
 @app.post("/scan", response_model=ScanResponse)
 async def scan_domain(req: ScanRequest):
     domain = req.domain.strip().lower()
-
-    # Strip http/https and paths if someone pastes a full URL
     domain = domain.replace("https://", "").replace("http://", "").split("/")[0]
 
     if not domain or "." not in domain:
         raise HTTPException(status_code=400, detail="Invalid domain format")
 
-    # Run all data sources in parallel
+    # Run all four data sources in parallel
     scan_data = await run_all_sources(domain)
 
-    categories = scan_data["categories"]
+    categories   = scan_data["categories"]
     all_findings = scan_data["findings"]
-    overall = scan_data["overall_score"]
+    overall      = scan_data["overall_score"]
 
-    # Placeholder narrative — replaced by Claude API in Week 3
-    category_summary = ", ".join(
-        f"{k.replace('_', ' ')}: {v}/100"
-        for k, v in categories.items()
-    )
-    narrative = (
-        f"Preliminary scan of {domain} complete. "
-        f"Scores — {category_summary}. "
-        f"Full AI-generated attacker narrative will appear here in Week 3."
-    )
-
-    remediations = [
-        "Enable multi-factor authentication across all employee accounts.",
-        "Subscribe to breach monitoring and force resets for exposed emails.",
-        "Audit third-party SaaS access and revoke unused OAuth tokens.",
-    ]
+    # Generate AI narrative — falls back to placeholder if no API key
+    ai = await generate_narrative(domain, all_findings, categories)
 
     return ScanResponse(
-        domain=domain,
-        overall_score=overall,
-        categories=categories,
-        findings=all_findings,
-        narrative=narrative,
-        remediations=remediations,
+        domain         = domain,
+        overall_score  = overall,
+        categories     = categories,
+        findings       = all_findings,
+        narrative      = ai["narrative"],
+        phishing_email = ai["phishing_email"],
+        remediations   = ai["remediations"],
     )

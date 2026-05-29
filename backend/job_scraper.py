@@ -2,30 +2,21 @@
 job_scraper.py — Infer a company's internal SaaS stack from public job postings.
 
 How it works:
-1. Hits the Adzuna job API (free account at developer.adzuna.com) to fetch
-   job postings for a given company name extracted from the domain.
-2. Scans each job description for known SaaS tool names using a keyword list.
-3. Returns a list of findings — each tool found is a potential attack surface
-   because an attacker can use it to craft convincing phishing emails
-   (e.g. a fake Workday password reset, a fake AWS billing alert).
+1. Checks demo data for known companies (pre-researched, accurate tech stacks)
+2. Falls back to Adzuna API if company not in demo data
+3. If neither returns results, signals NO_DATA so the aggregator omits
+   this category from scoring entirely — no misleading zeros in the report.
 
 Why this matters for security:
   Job postings are public intelligence. Attackers read them before targeting
-  a company. A posting saying "must know Okta and Salesforce" tells an
-  attacker exactly which login portals to spoof.
-
-Setup (free):
-  1. Register at https://developer.adzuna.com (takes 2 minutes, free)
-  2. Copy your App ID and App Key into .env:
-       ADZUNA_APP_ID=your_id_here
-       ADZUNA_APP_KEY=your_key_here
-  3. Without keys, the scraper uses demo fallback data for known companies.
+  a company. Knowing a company uses Okta and Salesforce tells an attacker
+  exactly which login portals to spoof.
 """
 
 import httpx
 import os
 import re
-from typing import Tuple
+from typing import Tuple, Union
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,9 +25,11 @@ ADZUNA_BASE = "https://api.adzuna.com/v1/api/jobs/us/search/1"
 ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
 ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
 
-# Demo fallback — pre-populated for major companies used in the live demo.
-# Each entry reflects real publicly known tech stacks.
-# Add any company you plan to demo here.
+# Sentinel value — tells aggregator to omit this category from scoring
+NO_DATA = "NO_DATA"
+
+# Pre-researched tech stacks for major companies.
+# Based on public job postings, engineering blogs, and press releases.
 DEMO_SAAS_DATA = {
     "adobe":      ["Salesforce", "AWS", "Microsoft Teams", "Workday", "GitHub", "Slack", "Jira"],
     "microsoft":  ["Azure", "GitHub", "Jira", "Salesforce", "Workday", "ServiceNow", "Slack"],
@@ -48,98 +41,77 @@ DEMO_SAAS_DATA = {
     "github":     ["AWS", "Azure", "Slack", "Okta", "Datadog", "Kubernetes", "Terraform"],
     "amazon":     ["AWS", "Salesforce", "Workday", "Slack", "GitHub", "Tableau", "ServiceNow"],
     "meta":       ["AWS", "Okta", "Slack", "GitHub", "Databricks", "Tableau", "Jira"],
+    "apple":      ["AWS", "Okta", "Slack", "GitHub", "Jira", "Splunk", "Tableau"],
+    "netflix":    ["AWS", "GitHub", "Slack", "Okta", "Datadog", "Databricks", "Jira"],
+    "spotify":    ["Google Cloud", "GitHub", "Slack", "Okta", "Datadog", "Jira", "Confluence"],
+    "uber":       ["AWS", "GitHub", "Slack", "Okta", "Datadog", "Kubernetes", "Terraform"],
+    "airbnb":     ["AWS", "GitHub", "Slack", "Okta", "Datadog", "Databricks", "Jira"],
+    "stripe":     ["AWS", "GitHub", "Slack", "Okta", "Datadog", "Terraform", "Confluence"],
+    "twilio":     ["AWS", "GitHub", "Slack", "Okta", "Datadog", "Jira", "Salesforce"],
+    "shopify":    ["Google Cloud", "GitHub", "Slack", "Okta", "Datadog", "Kubernetes", "Jira"],
+    "coinbase":   ["AWS", "GitHub", "Slack", "Okta", "Datadog", "Terraform", "Jira"],
+    "palantir":   ["AWS", "GitHub", "Slack", "Okta", "Kubernetes", "Terraform", "Splunk"],
 }
 
-# Master list of SaaS tools and cloud platforms to scan for.
+# SaaS tools to scan for in job descriptions.
 # Each entry: (tool_name, category, severity)
-# severity = how useful this is to an attacker:
-#   high   = login portal to spoof, sensitive data platform
-#   medium = reveals tech stack or cloud provider
-#   low    = general productivity tool
 SAAS_KEYWORDS = [
-    # Identity & Access
-    ("Okta",               "Identity & Access", "high"),
-    ("OneLogin",           "Identity & Access", "high"),
-    ("Azure AD",           "Identity & Access", "high"),
-    ("Active Directory",   "Identity & Access", "high"),
-
-    # CRM & Sales
-    ("Salesforce",         "CRM",               "high"),
-    ("HubSpot",            "CRM",               "medium"),
-    ("Zoho",               "CRM",               "medium"),
-
-    # HR & Payroll
-    ("Workday",            "HR & Payroll",      "high"),
-    ("ADP",                "HR & Payroll",      "high"),
-    ("BambooHR",           "HR & Payroll",      "medium"),
-    ("Greenhouse",         "HR & Payroll",      "medium"),
-    ("Lever",              "HR & Payroll",      "medium"),
-
-    # Cloud Infrastructure
-    ("AWS",                "Cloud",             "high"),
-    ("Amazon Web Services","Cloud",             "high"),
-    ("Google Cloud",       "Cloud",             "high"),
-    ("GCP",                "Cloud",             "high"),
-    ("Azure",              "Cloud",             "high"),
-    ("Kubernetes",         "Cloud",             "medium"),
-    ("Terraform",          "Cloud",             "medium"),
-    ("Datadog",            "Cloud",             "medium"),
-
-    # DevOps & Code
-    ("GitHub",             "DevOps",            "high"),
-    ("GitLab",             "DevOps",            "high"),
-    ("Jenkins",            "DevOps",            "medium"),
-    ("CircleCI",           "DevOps",            "medium"),
-    ("Jira",               "Project Mgmt",      "medium"),
-    ("Confluence",         "Project Mgmt",      "medium"),
-
-    # Communication
-    ("Slack",              "Communication",     "high"),
-    ("Microsoft Teams",    "Communication",     "medium"),
-    ("Zoom",               "Communication",     "medium"),
-
-    # Finance
-    ("QuickBooks",         "Finance",           "high"),
-    ("NetSuite",           "Finance",           "high"),
-    ("SAP",                "Finance",           "high"),
-    ("Stripe",             "Finance",           "medium"),
-
-    # Security
-    ("CrowdStrike",        "Security",          "medium"),
-    ("Splunk",             "Security",          "medium"),
-    ("Palo Alto",          "Security",          "medium"),
-
-    # Data & Productivity
-    ("Snowflake",          "Data",              "medium"),
-    ("Databricks",         "Data",              "medium"),
-    ("Tableau",            "Data",              "low"),
-    ("Google Workspace",   "Productivity",      "medium"),
-    ("Microsoft 365",      "Productivity",      "medium"),
-    ("Dropbox",            "Storage",           "medium"),
-    ("Box",                "Storage",           "medium"),
-    ("ServiceNow",         "IT",                "high"),
-    ("Zendesk",            "Support",           "medium"),
+    ("Okta",                "Identity & Access", "high"),
+    ("OneLogin",            "Identity & Access", "high"),
+    ("Azure AD",            "Identity & Access", "high"),
+    ("Active Directory",    "Identity & Access", "high"),
+    ("Salesforce",          "CRM",               "high"),
+    ("HubSpot",             "CRM",               "medium"),
+    ("Zoho",                "CRM",               "medium"),
+    ("Workday",             "HR & Payroll",      "high"),
+    ("ADP",                 "HR & Payroll",      "high"),
+    ("BambooHR",            "HR & Payroll",      "medium"),
+    ("Greenhouse",          "HR & Payroll",      "medium"),
+    ("Lever",               "HR & Payroll",      "medium"),
+    ("AWS",                 "Cloud",             "high"),
+    ("Amazon Web Services", "Cloud",             "high"),
+    ("Google Cloud",        "Cloud",             "high"),
+    ("GCP",                 "Cloud",             "high"),
+    ("Azure",               "Cloud",             "high"),
+    ("Kubernetes",          "Cloud",             "medium"),
+    ("Terraform",           "Cloud",             "medium"),
+    ("Datadog",             "Cloud",             "medium"),
+    ("GitHub",              "DevOps",            "high"),
+    ("GitLab",              "DevOps",            "high"),
+    ("Jenkins",             "DevOps",            "medium"),
+    ("CircleCI",            "DevOps",            "medium"),
+    ("Jira",                "Project Mgmt",      "medium"),
+    ("Confluence",          "Project Mgmt",      "medium"),
+    ("Slack",               "Communication",     "high"),
+    ("Microsoft Teams",     "Communication",     "medium"),
+    ("Zoom",                "Communication",     "medium"),
+    ("QuickBooks",          "Finance",           "high"),
+    ("NetSuite",            "Finance",           "high"),
+    ("SAP",                 "Finance",           "high"),
+    ("Stripe",              "Finance",           "medium"),
+    ("CrowdStrike",         "Security",          "medium"),
+    ("Splunk",              "Security",          "medium"),
+    ("Palo Alto",           "Security",          "medium"),
+    ("Snowflake",           "Data",              "medium"),
+    ("Databricks",          "Data",              "medium"),
+    ("Tableau",             "Data",              "low"),
+    ("Google Workspace",    "Productivity",      "medium"),
+    ("Microsoft 365",       "Productivity",      "medium"),
+    ("Dropbox",             "Storage",           "medium"),
+    ("Box",                 "Storage",           "medium"),
+    ("ServiceNow",          "IT",                "high"),
+    ("Zendesk",             "Support",           "medium"),
 ]
 
 
 def _extract_company_name(domain: str) -> str:
-    """
-    Turn 'acme.com' into 'acme' for use in job search queries.
-    Strips subdomains and TLDs.
-    Example: 'mail.google.com' → 'google'
-    """
+    """'mail.google.com' → 'google'"""
     parts = domain.split(".")
-    if len(parts) >= 2:
-        return parts[-2]
-    return parts[0]
+    return parts[-2] if len(parts) >= 2 else parts[0]
 
 
 def _scan_text_for_tools(text: str) -> list[dict]:
-    """
-    Scan a block of text for SaaS tool names.
-    Uses word-boundary regex so 'AWS' doesn't match 'JAWS'.
-    Returns a list of unique matched tools.
-    """
+    """Scan text for SaaS tool keywords. Returns unique matched tools."""
     text_lower = text.lower()
     found = {}
 
@@ -175,30 +147,38 @@ def _tool_count_to_score(count: int) -> int:
         return 80
 
 
-async def scrape_job_postings(domain: str) -> Tuple[list[dict], int]:
+async def scrape_job_postings(domain: str) -> Tuple[list[dict], Union[int, str]]:
     """
-    Main entry point. Fetches job postings for a company and scans them
-    for SaaS tool mentions.
+    Main entry point.
 
     Returns:
-        findings  — list of Finding-compatible dicts, one per detected tool
-        score     — 0–100 SaaS stack exposure score
+        findings  — list of Finding dicts (empty if no data)
+        score     — int 0-100, OR NO_DATA string if category should be
+                    omitted from the report entirely
     """
     company = _extract_company_name(domain)
 
+    # Check demo data first — instant and reliable
+    if company.lower() in DEMO_SAAS_DATA:
+        return _demo_fallback(company)
+
+    # Try Adzuna if credentials are available
     if ADZUNA_APP_ID and ADZUNA_APP_KEY:
-        return await _query_adzuna(company)
+        findings, score = await _query_adzuna(company)
+        if findings:
+            return findings, score
 
-    print(f"[JobScraper] No Adzuna credentials — using demo data for {company}")
-    return _demo_fallback(company)
+    # No data from any source — signal omission
+    print(f"[JobScraper] No data for {company} — omitting saas_stack_exposure from score")
+    return [], NO_DATA
 
 
-async def _query_adzuna(company: str) -> Tuple[list[dict], int]:
+async def _query_adzuna(company: str) -> Tuple[list[dict], Union[int, str]]:
     params = {
         "app_id": ADZUNA_APP_ID,
         "app_key": ADZUNA_APP_KEY,
         "results_per_page": 10,
-        "what_or": company,
+        "company": company,
         "content-type": "application/json",
     }
 
@@ -212,49 +192,34 @@ async def _query_adzuna(company: str) -> Tuple[list[dict], int]:
             if response.status_code == 200:
                 data = response.json()
                 jobs = data.get("results", [])
-                print(f"[JobScraper] Got {len(jobs)} job postings for {company}")
+                print(f"[JobScraper] Got {len(jobs)} postings for {company}")
                 for job in jobs:
                     raw_text += " " + job.get("title", "")
                     raw_text += " " + job.get("description", "")
             else:
-                print(f"[JobScraper] Adzuna error {response.status_code} — falling back to demo data")
-                return _demo_fallback(company)
+                print(f"[JobScraper] Adzuna error {response.status_code}")
+                return [], NO_DATA
 
     except httpx.TimeoutException:
-        print(f"[JobScraper] Timeout for {company} — falling back to demo data")
-        return _demo_fallback(company)
+        print(f"[JobScraper] Timeout for {company}")
+        return [], NO_DATA
     except Exception as e:
-        print(f"[JobScraper] Error: {e} — falling back to demo data")
-        return _demo_fallback(company)
+        print(f"[JobScraper] Error: {e}")
+        return [], NO_DATA
 
     findings = _scan_text_for_tools(raw_text)
-    print(f"[JobScraper] Found {len(findings)} tools in postings for {company}")
-
-    # If live API returned no useful findings, use demo data as backup
-    if not findings:
-        print(f"[JobScraper] No tools detected in live postings — falling back to demo data")
-        return _demo_fallback(company)
-
+    print(f"[JobScraper] Found {len(findings)} tools for {company}")
     return findings, _tool_count_to_score(len(findings))
 
 
 def _demo_fallback(company: str) -> Tuple[list[dict], int]:
-    """
-    Return findings from pre-populated demo data for known companies.
-    For unknown companies returns empty — scan still completes cleanly.
-    """
     tool_names = DEMO_SAAS_DATA.get(company.lower(), [])
-
-    if not tool_names:
-        print(f"[JobScraper] No demo data for {company} — returning empty")
-        return [], 0
-
     findings = []
+
     for tool_name in tool_names:
         meta = next((s for s in SAAS_KEYWORDS if s[0] == tool_name), None)
         category = meta[1] if meta else "SaaS"
         severity = meta[2] if meta else "medium"
-
         findings.append({
             "type": "saas_tool",
             "detail": (
@@ -267,5 +232,5 @@ def _demo_fallback(company: str) -> Tuple[list[dict], int]:
             "category": category,
         })
 
-    print(f"[JobScraper] Demo fallback returning {len(findings)} tools for {company}")
+    print(f"[JobScraper] Demo data: {len(findings)} tools for {company}")
     return findings, _tool_count_to_score(len(findings))
