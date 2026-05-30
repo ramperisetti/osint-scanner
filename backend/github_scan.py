@@ -122,6 +122,22 @@ async def _live_scan(domain: str, company: str) -> Tuple[list[dict], Union[int, 
     print(f"[GitHub] Starting live scan for {company}, token set: {bool(GITHUB_TOKEN)}")
     findings = []
 
+    try:
+        async with httpx.AsyncClient(timeout=8.0, headers=_headers()) as client:
+            r = await client.get(f"{GITHUB_BASE}/orgs/{company}")
+            print(f"[GitHub] Org lookup status: {r.status_code} for {company}")
+
+            if r.status_code == 404:
+                r2 = await client.get(
+                    f"{GITHUB_BASE}/search/users",
+                    params={"q": f"{company} type:org", "per_page": 1}
+                )
+                print(f"[GitHub] Search fallback status: {r2.status_code}")
+                if r2.status_code == 200 and r2.json().get("items"):
+                    login = r2.json()["items"][0]["login"]
+                    print(f"[GitHub] Found org via search: {login}")
+                    r = await client.get(f"{GITHUB_BASE}/orgs/{login}")
+
 
     try:
         async with httpx.AsyncClient(timeout=8.0, headers=_headers()) as client:
