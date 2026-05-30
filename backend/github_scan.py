@@ -104,12 +104,18 @@ def _score(findings: list[dict]) -> int:
 async def scan_github(domain: str) -> Tuple[list[dict], Union[int, str]]:
     company = domain.split(".")[0].lower()
 
-    # Demo fallback for known companies
+    # Always try live scan first now that GITHUB_TOKEN is set
+    if GITHUB_TOKEN:
+        result = await _live_scan(domain, company)
+        # If live scan returns data, use it
+        if result[0]:
+            return result
+
+    # Fall back to demo data if live scan returns nothing
     if company in DEMO_GITHUB_DATA:
         return _demo_fallback(company)
 
-    # Live scan for unknown companies
-    return await _live_scan(domain, company)
+    return [], NO_DATA
 
 
 async def _live_scan(domain: str, company: str) -> Tuple[list[dict], Union[int, str]]:
