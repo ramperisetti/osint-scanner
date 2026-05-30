@@ -1,13 +1,13 @@
 """
 hibp.py — HaveIBeenPwned breach lookup by domain.
 
-API key required: https://haveibeenpwned.com/API/Key
+API  required: https://haveibeenpwned.com/API/
 Cost: $3.50/month. Email troy@troyhunt.com explaining it's a student
-hackathon project — he sometimes grants free researcher keys.
+hackathon project — he sometimes grants free researcher s.
 
-Set HIBP_API_KEY in your .env file.
-If no key is present, falls back to curated demo data for known domains
-so the app still works end-to-end while you wait for the key.
+Set HIBP_API_ in your .env file.
+If no  is present, falls back to curated demo data for known domains
+so the app still works end-to-end while you wait for the .
 """
 
 import httpx
@@ -20,7 +20,7 @@ load_dotenv()
 HIBP_BASE = "https://haveibeenpwned.com/api/v3"
 HIBP_API_KEY = os.getenv("HIBP_API_KEY", "")
 
-# Fallback demo data — used when no API key is set
+# Fallback demo data — used when no API  is set
 DEMO_BREACH_DATA = {
     "linkedin.com": [
         {"type": "breach", "detail": "LinkedIn breach (2012): 164,611,595 accounts exposed. Data types: Email addresses, Passwords.", "severity": "high"},
@@ -60,10 +60,12 @@ async def check_breaches(domain: str) -> Tuple[list[dict], int]:
         score     — 0–100 credential exposure risk score
     """
     if HIBP_API_KEY:
-        return await _query_hibp_api(domain)
+    print(f"[HIBP] Using live API for {domain}")
+    return await _query_hibp_api(domain)
 
     print(f"[HIBP] No API key set — using demo data for {domain}")
     return _demo_fallback(domain)
+
 
 
 async def _query_hibp_api(domain: str) -> Tuple[list[dict], int]:
@@ -73,6 +75,7 @@ async def _query_hibp_api(domain: str) -> Tuple[list[dict], int]:
         "hibp-api-key": HIBP_API_KEY,
     }
 
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url, headers=headers)
@@ -80,7 +83,7 @@ async def _query_hibp_api(domain: str) -> Tuple[list[dict], int]:
             if response.status_code == 404:
                 return [], 0
             if response.status_code == 401:
-                print("[HIBP] Invalid API key — check your .env file")
+                print("[HIBP] Invalid API  — check your .env file")
                 return [], 0
             if response.status_code != 200:
                 print(f"[HIBP] Unexpected status {response.status_code} for {domain}")
