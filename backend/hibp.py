@@ -52,19 +52,13 @@ def _breach_count_to_score(count: int) -> int:
 
 
 async def check_breaches(domain: str) -> Tuple[list[dict], int]:
-    """
-    Query HIBP for all breaches associated with a domain.
-
-    Returns:
-        findings  — list of Finding-compatible dicts
-        score     — 0–100 credential exposure risk score
-    """
     if HIBP_API_KEY:
-    print(f"[HIBP] Using live API for {domain}")
-    return await _query_hibp_api(domain)
+        print(f"[HIBP] Using live API for {domain}")
+        return await _query_hibp_api(domain)
 
     print(f"[HIBP] No API key set — using demo data for {domain}")
     return _demo_fallback(domain)
+
 
 
 
