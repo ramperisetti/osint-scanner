@@ -119,7 +119,9 @@ async def scan_github(domain: str) -> Tuple[list[dict], Union[int, str]]:
 
 
 async def _live_scan(domain: str, company: str) -> Tuple[list[dict], Union[int, str]]:
+    print(f"[GitHub] Starting live scan for {company}, token set: {bool(GITHUB_TOKEN)}")
     findings = []
+
 
     try:
         async with httpx.AsyncClient(timeout=8.0, headers=_headers()) as client:
